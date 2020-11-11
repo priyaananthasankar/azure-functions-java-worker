@@ -19,6 +19,7 @@ public class JavaMethodExecutorImpl implements JavaMethodExecutor {
             throws MalformedURLException, ClassNotFoundException, NoSuchMethodException
     {
         descriptor.validateMethodInfo();
+        this.classLoaderProvider = classLoaderProvider;
 
         this.containingClass = getContainingClass(descriptor.getFullClassName(), classLoaderProvider);
         this.overloadResolver = new ParameterResolver();
@@ -49,9 +50,25 @@ public class JavaMethodExecutorImpl implements JavaMethodExecutor {
     public ParameterResolver getOverloadResolver() { return this.overloadResolver; }
 
     public void execute(BindingDataStore dataStore) throws Exception {
+        Object myInvokedFunctionObject = this.containingClass.newInstance();
+        Map<String, String> myMap = (Map<String, String>) containingClass.getMethod("Configure").invoke(myInvokedFunctionObject);
+        for (Map.Entry<String,String> entry : myMap.entrySet()) {
+
+           // Get the class name of the object that needs to be injected
+           Class injectedClass = getContainingClass(entry.getValue(),classLoaderProvider);
+
+           // Get the class name of the instance of the azure function
+           Class myInvokedClass = myInvokedFunctionObject.getClass();
+
+           // Get the specific field into which we need to inject the object
+           Field field = myInvokedClass.getDeclaredField(entry.getKey());
+
+           // Inject the dependency here
+           field.set(myInvokedFunctionObject,injectedClass.newInstance());
+        }
         Object retValue = this.overloadResolver.resolve(dataStore)
                 .orElseThrow(() -> new NoSuchMethodException("Cannot locate the method signature with the given input"))
-                .invoke(() -> this.containingClass.newInstance());
+                .invoke(() -> myInvokedFunctionObject);
         dataStore.setDataTargetValue(BindingDataStore.RETURN_NAME, retValue);
     }
 
@@ -63,4 +80,5 @@ public class JavaMethodExecutorImpl implements JavaMethodExecutor {
     private Class<?> containingClass;
     private final ParameterResolver overloadResolver;
     private final Map<String, BindingDefinition> bindingDefinitions;
+    private final ClassLoaderProvider classLoaderProvider;
 }
